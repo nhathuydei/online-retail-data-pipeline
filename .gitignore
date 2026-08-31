@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Local datasets
+*.xlsx
+*.zip
+
+# Power BI
+*.pbix
+
+# Environment / secrets
+.env
