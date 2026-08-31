@@ -671,6 +671,3 @@ The project demonstrates practical experience with:
 * DAX
 * JDBC-based data movement
 * Business-oriented data analysis
-
-:::
-Tôi cố tình để README này **thành thật về trạng thái V1**: không nói Airflow/ML là đã làm, không nói dashboard production-ready, và không khẳng định đây là kiến trúc thực tế của doanh nghiệp. Khi đưa lên CV/GitHub, cách này tốt hơn việc “thổi” project lên quá mức.
