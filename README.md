@@ -1,673 +1,634 @@
-Online Retail Data Pipeline & Analytics
+# Online Retail Data Pipeline & Analytics
 
-📌 Overview
+An end-to-end data engineering and analytics project that processes retail transaction data from Excel into MySQL, transforms it with PySpark, loads it into a PostgreSQL data warehouse and data mart, and visualizes business metrics in Power BI.
 
-This project builds an end-to-end data pipeline for an online retail business, starting from raw transactional data and ending with an analytics dashboard.
+## 1. Project Overview
 
-The project simulates a business scenario where an online retailer generates transaction data during its daily operations. The data is extracted from a raw data source, processed and cleaned using PySpark, stored in a PostgreSQL data warehouse, and then transformed into an analytics-oriented data mart for Power BI.
+This project simulates a retail data pipeline using a containerized local environment. It demonstrates data ingestion, transformation, relational data modeling, workflow orchestration, and business intelligence reporting.
 
-The main goal of the project is to practice how raw transactional data can be transformed into structured data that supports business analysis and decision-making.
+The pipeline uses **Apache Airflow** to orchestrate the transformation and data mart creation steps. The initial Excel-to-MySQL ingestion is executed separately when the source data needs to be loaded or reloaded.
 
-The dashboard focuses on questions such as:
+### Objectives
 
-* How much revenue is generated?
-* How many orders and customers are there?
-* How does revenue change over time?
-* Which products generate the most revenue?
-* How many customers are returning customers?
-* How many new customers are acquired each month?
-* How is revenue distributed across days of the week?
-* Which customers contribute the most revenue?
+- Ingest raw retail transactions from Excel into MySQL.
+- Transform and standardize transaction data with PySpark.
+- Store transformed data in PostgreSQL as a warehouse layer.
+- Build a dimensional data mart for sales analytics.
+- Orchestrate warehouse and data mart processing with Apache Airflow.
+- Build a Power BI dashboard to explore sales trends, customers, and products.
 
-A machine learning branch for future sales/customer prediction is also planned, but is not part of the current V1 scope.
+## 2. Architecture
 
-⸻
-
-🏢 Business Context
-
-The dataset represents transactions from a UK-based non-store online retailer selling unique gift products.
-
-The business primarily sells through online channels, with many customers being wholesalers.
-
-For this project, the dataset is treated as transactional data generated from the company’s daily sales operations.
-
-The project uses the transaction data to simulate a simplified data engineering workflow:
-
-Operational Transaction Data
-          ↓
-      Raw Storage
-          ↓
-       ETL Process
-          ↓
-      Data Warehouse
-          ↓
-       Data Mart
-          ↓
-      Power BI
-          ↓
- Business Analysis & Monitoring
-
-The project does not attempt to reproduce the exact production architecture of the original retailer. Instead, it uses a simplified architecture to demonstrate core data engineering concepts.
-
-⸻
-
-📊 Dataset
-
-Dataset:
-
-Online Retail Dataset
-
-The dataset contains transactions occurring between:
-
-* 01/12/2010
-* 09/12/2011
-
-The original dataset contains the following columns:
-
-Column	Description
-InvoiceNo	Invoice / transaction identifier
-StockCode	Product identifier
-Description	Product description
-Quantity	Quantity of items purchased
-InvoiceDate	Transaction timestamp
-UnitPrice	Price per item
-CustomerID	Customer identifier
-Country	Customer country
-
-Source file used in the project:
-
+```text
 Online Retail.xlsx
-
-⸻
-
-🏗️ Architecture
-
-The current V1 pipeline consists of four main stages.
-
-Online Retail.xlsx
-       │
-       ▼
-     MySQL
-   raw_sales
-       │
-       │ Extract
-       ▼
-    PySpark
-  Clean / Transform
-       │
-       ▼
- PostgreSQL
-   Warehouse
-       │
-       │ Transform / Model
-       ▼
-      Mart
-       │
-       ▼
-    Power BI
-
-Technologies
-
-Technology	Purpose
-Python	Data ingestion and pipeline implementation
-MySQL	Raw data storage
-PySpark	ETL and data transformation
-PostgreSQL	Data warehouse and analytical storage
-Power BI	Dashboard and data visualization
-ODBC	Power BI → PostgreSQL connectivity
-
-The project currently runs locally on a MacBook.
-
-Power BI is run inside a virtual machine on the same machine and connects to PostgreSQL through ODBC.
-
-⸻
-
-🔄 Data Pipeline
-
-1. Raw Data Ingestion
-
-The raw dataset is provided as an Excel file:
-
-Online Retail.xlsx
-
-Python is used to load the raw data into MySQL.
-
-The raw table is:
-
-MySQL
-└── raw_data
-    └── raw_sales
-
-The raw layer is intentionally kept close to the original source structure so that the original transaction data can be retained before transformation.
-
-⸻
-
-2. Extract
-
-PySpark connects to MySQL through JDBC and reads the raw_sales table.
-
-MySQL raw_sales
-       ↓
-     PySpark
-
-PySpark is used as the main ETL processing engine.
-
-⸻
-
-3. Transform
-
-Several data quality and business rules are applied in PySpark.
-
-Data type and text standardization
-
-* Cast CustomerID to string
-* Trim StockCode
-* Convert StockCode to uppercase
-* Trim Description
-
-Test records
-
-Records containing "test" in the description are excluded.
-
-df.filter(~F.col("Description").ilike("%test%"))
-
-Transaction classification
-
-The pipeline creates several flags:
-
-IsCanceled
-IsReturn
-IsFreeOrInvalidPrice
-IsBadDebtAdjustment
-HasCustomer
-CustomerType
-IsValidTransaction
-
-Cancellation
-
-Invoices beginning with C are classified as cancelled transactions.
-
-InvoiceNo starts with C
-        ↓
-IsCanceled = true
-
-Bad debt adjustment
-
-Invoices beginning with A are treated as accounting adjustments related to bad debt.
-
-InvoiceNo starts with A
-        ↓
-IsBadDebtAdjustment = true
-
-These records are retained in the warehouse with their business classification rather than being immediately deleted.
-
-Returns
-
-Negative quantities are identified using:
-
-Quantity < 0
-        ↓
-IsReturn = true
-
-Invalid / free-price records
-
-Records with a non-positive unit price are identified using:
-
-UnitPrice <= 0
-        ↓
-IsFreeOrInvalidPrice = true
-
-Valid transactions
-
-A record is considered a valid transaction when:
-
-* Quantity is not null
-* UnitPrice is not null
-* Quantity != 0
-* UnitPrice > 0
-* the invoice is not cancelled
-* the invoice is not a bad debt adjustment
-
-⸻
-
-4. Product Classification
-
-The pipeline derives a ProductType column based on StockCode.
-
-Current business classification:
-
-ProductType	Rule
-Shipping	POST, C2
-Discount	DOT
-Fee	AMAZONFEE, BANK CHARGES
-Sample	S
-Manual	M
-Gift	StockCode starts with GIFT
-Internal	StockCode starts with DCGS
-Product	Other stock codes
-
-Revenue is calculated as:
-
-Revenue = Quantity × UnitPrice
-
-⸻
-
-5. Duplicate Handling
-
-The pipeline removes exact duplicate rows using:
-
-df = df.dropDuplicates()
-
-The project does not currently treat:
-
-InvoiceNo + StockCode + InvoiceDate
-
-as a unique key.
-
-During data investigation, multiple records were found with the same three fields but different quantities.
-
-For example, the dataset contains records where:
-
-InvoiceNo + StockCode + InvoiceDate
-
-are identical while Quantity differs.
-
-Therefore, deduplicating using only these three fields could incorrectly remove valid transaction data.
-
-The current V1 approach only removes full-row duplicates.
-
-⸻
-
-🗄️ Data Warehouse
-
-PostgreSQL is used as the warehouse layer.
-
-Current database:
-
-retail_dwh
+       |
+       v
+Python / Pandas
+       |
+       v
+MySQL — retail_source
+Raw transactional data
+       |
+       | MySQL JDBC
+       v
+PySpark
+Data cleaning and transformation
+       |
+       | PostgreSQL JDBC
+       v
+PostgreSQL — retail_dwh
+warehouse.online_retail_clean
+       |
+       | Apache Airflow orchestrates:
+       | 1. Initialize warehouse schema
+       | 2. Run PySpark transformation
+       | 3. Build data mart
+       v
+PostgreSQL — mart schema
+       |
+       v
+Power BI via ODBC
+Sales Performance & Customer Analytics
+```
+
+**Orchestration note:** The Excel-to-MySQL ingestion script is run separately. The Airflow DAG orchestrates the warehouse initialization, PySpark transformation, and data mart creation steps.
+
+## 3. Technology Stack
+
+| Component | Technology |
+|---|---|
+| Source dataset | Online Retail dataset |
+| Source ingestion | Python, Pandas, MySQL Connector |
+| Source database | MySQL 8.0 |
+| Data transformation | PySpark 4.0.4 |
+| Data warehouse and data mart | PostgreSQL 16 |
+| Workflow orchestration | Apache Airflow 2.8.1 |
+| Containerization | Docker, Docker Compose |
+| JVM | Eclipse Temurin OpenJDK 17 |
+| Business intelligence | Power BI |
+| Database connectivity | MySQL JDBC, PostgreSQL JDBC, ODBC |
+| Development environment | macOS on Apple Silicon |
+
+The project was developed and tested in a local environment. The exact versions above reflect the environment used during development; they are not a guarantee that every other environment will behave identically.
+
+## 4. Dataset
+
+This project uses the **Online Retail** dataset from the UCI Machine Learning Repository.
+
+**Dataset source:** [UCI Machine Learning Repository — Online Retail](https://archive.ics.uci.edu/dataset/352/online%2Bretail?utm_source=chatgpt.com)
+
+The dataset contains transactions from a UK-based, non-store online retailer between December 1, 2010, and December 9, 2011. The business mainly sells gifts, and many customers are wholesalers.
+
+The original dataset contains **541,909 rows**.
+
+Key fields include:
+
+- `InvoiceNo`
+- `StockCode`
+- `Description`
+- `Quantity`
+- `InvoiceDate`
+- `UnitPrice`
+- `CustomerID`
+- `Country`
+
+### Download and placement
+
+The Excel dataset is not included in this repository. Download it from the official source above and place it at:
+
+```text
+data/raw/online_retail.xlsx
+```
+
+Make sure the filename and path match the ingestion script's configuration.
+
+## 5. Data Pipeline
+
+### Step 1 — Excel to MySQL
+
+Script: `src/01_excel_to_mysql.py`
+
+The script reads the Excel dataset with Python and Pandas and loads the records into the MySQL source table, `raw_sales`.
+
+Key implementation details:
+
+- Reads the Excel source file.
+- Loads records in batches of 20,000 rows.
+- Inserts records into MySQL and commits each batch.
+- Truncates the target source table before reloading the dataset.
+
+**Important:** Running this script reloads the source table. Do not run it merely to refresh the downstream warehouse unless you intend to replace the current source data.
+
+### Step 2 — MySQL to PostgreSQL using PySpark
+
+Script: `src/02_spark_mysql_to_postgres.py`
+
+PySpark reads raw records from MySQL through JDBC, applies standardization and transaction classification, and writes the transformed records to PostgreSQL.
+
+Transformations include:
+
+- Removing rows whose descriptions contain `test`, case-insensitively.
+- Trimming customer IDs and converting empty or invalid placeholder values to null.
+- Trimming descriptions and normalizing stock codes to uppercase.
+- Identifying canceled invoices using the `C` invoice prefix.
+- Flagging returns based on negative quantities.
+- Flagging zero or negative unit prices.
+- Identifying bad-debt adjustments using the `A` invoice prefix.
+- Creating customer-presence and customer-type flags.
+- Classifying records into product, shipping, discount, fee, sample, manual, gift, and internal categories.
+- Calculating `revenue` as `quantity × unitprice`.
+- Removing exact duplicate rows using `dropDuplicates()`.
+
+The transformed data is written to:
+
+```text
+PostgreSQL
 └── warehouse
     └── online_retail_clean
+```
 
-The warehouse table stores the cleaned and enriched transaction-level data produced by PySpark.
+The `isvalidtransaction` field is a classification flag. It is not used as a general filter that removes all invalid transactions from the transformed table or data mart.
 
-Current schema includes:
+### Step 3 — PostgreSQL warehouse and data mart
 
-invoiceno
-stockcode
-description
-quantity
-invoicedate
-unitprice
-customerid
-country
-iscanceled
-isreturn
-isfreeorinvalidprice
-isbaddebtadjustment
-hascustomer
-customertype
-isvalidtransaction
-producttype
-revenue
+SQL files:
 
-The warehouse layer is intended to retain a relatively detailed version of the cleaned transaction data.
+- `sql/01_init_postgres_dwh.sql`
+- `sql/02_build_postgres_mart.sql`
 
-This allows the data to be reused for different downstream purposes instead of designing the warehouse exclusively around the Power BI dashboard.
+The warehouse initialization script creates the `warehouse.online_retail_clean` table and its constraints and indexes.
 
-⸻
+The data mart script recreates the `mart` schema and builds the reporting tables.
 
-📦 Data Mart
+#### Data mart model
 
-The data mart is the analytical layer consumed by Power BI.
+```text
+dim_date ─────────┐
+                  |
+dim_customer ─────┼──> fact_sales
+                  |
+dim_product ──────┘
 
-The current design separates the detailed warehouse layer from the presentation-oriented mart layer.
+fact_sales ───────────> agg_daily_sales
+```
 
-Conceptually:
+The model includes:
 
-WAREHOUSE
-    │
-    │ Transform / filter / model
-    ▼
-MART
-    │
-    ▼
-Power BI
+| Table | Purpose |
+|---|---|
+| `mart.dim_date` | Date attributes for time-based analysis |
+| `mart.dim_customer` | Customer identifiers, customer types, and purchase date ranges |
+| `mart.dim_product` | Product codes, descriptions, and product types |
+| `mart.fact_sales` | Product-level sales records used for analytics |
+| `mart.agg_daily_sales` | Daily revenue and quantity aggregation |
 
-The mart contains analytical structures such as:
+The `fact_sales` table is built from records classified as `Product`. The data mart excludes canceled invoices, bad-debt adjustments, and records classified as `Manual`, `Sample`, or `Internal` from its base view.
 
-mart
-├── dim_date
-├── dim_product
-├── dim_customer
-├── fact_sales
-└── agg_daily_sales
+**Returns are retained in the product fact table when they meet the other filtering conditions.** Because revenue is calculated as quantity multiplied by unit price, negative quantities can contribute negative revenue. The resulting revenue therefore reflects the impact of retained returns; it should not automatically be interpreted as an accounting-certified net revenue figure.
 
-Dimension tables
+The current model does not use `isvalidtransaction` as a filter when creating `fact_sales`.
 
-dim_product
+## 6. Workflow Orchestration with Airflow
 
-Contains product-level information such as:
+DAG file: `dags/retail_etl_dag.py`
 
-* StockCode
-* Description
-* ProductType
-* ProductTypeGroup
+DAG ID: `retail_production_pipeline`
 
-Product groups are classified into broader analytical categories:
+The DAG contains three tasks:
 
-Core
-Operational
-Adjustment
-Other
+1. `init_postgres_dwh_schema`
+2. `spark_mysql_to_postgres`
+3. `build_postgres_data_mart`
 
-dim_customer
+The tasks run in sequence:
 
-Contains customer-level information such as:
+```text
+init_postgres_dwh_schema
+          |
+          v
+spark_mysql_to_postgres
+          |
+          v
+build_postgres_data_mart
+```
 
-* Customer ID
-* Customer type
-* First purchase date
-* Last purchase date
+The DAG is configured with:
 
-dim_date
+- `catchup=False`
+- One retry for a failed task
+- A two-minute retry delay
+- Cron expression `0 2 * * *`
 
-Provides date attributes for time-based analysis, including:
+The cron expression is configured in the DAG, but automatic scheduled execution and its effective timezone have not been verified. The documented successful run was triggered manually through Airflow.
 
-* Year
-* Month
-* Year-Month
-* Day
-* Day of week
-* Quarter
-* Weekend indicator
+### Important behavior
 
-Fact table
+The warehouse initialization SQL drops and recreates `warehouse.online_retail_clean`. The data mart SQL also drops and recreates the `mart` schema.
 
-fact_sales contains transaction-level sales information used by Power BI for analysis.
+As a result, each successful DAG run rebuilds these downstream tables rather than incrementally merging new records into the existing tables.
 
-⸻
+## 7. Power BI Dashboard
 
-📈 Power BI Dashboard
+File: `bi/Retail_Sales_Performance.pbix`
 
-Power BI connects to the PostgreSQL mart layer.
+Power BI connects to the local PostgreSQL instance through ODBC, using the `retail_dwh` database and the `mart` schema.
 
-The dashboard is designed to provide a high-level view of business performance that could be used by business or operations stakeholders to monitor sales activity and investigate areas for improvement.
+The semantic model uses a star-schema structure with `fact_sales` connected to `dim_date`, `dim_customer`, and `dim_product`.
 
-Current metrics and analysis include:
+The provided DAX measures are organized in a dedicated `_Measures` table.
 
-Sales Performance
+### Page 1 — Sales Performance & Trends
 
-* Total Revenue
-* Total Orders
-* Average Order Value
-* Revenue by Month
-* Orders by Day of Week
-* Revenue by Day of Week
-* Revenue by Country
-* Revenue by Year / Month
+The first page focuses on overall sales performance and time-based trends.
 
-Customer Analysis
+It includes:
 
-* Total Customers
-* Active Customers
-* New Customers by Month
-* Repeat Customers
-* Repeat Customer %
-* Top Customers by Revenue
-* Customer Count by Customer Type
-* Revenue by Customer Type
+- Total Revenue
+- Total Orders
+- Average Order Value
+- Active Customers
+- Revenue and order trends over time
+- Revenue analysis by day of the week
+- Date, country, and product-related slicers
 
-Product Analysis
+The current dashboard analysis highlights weekday sales patterns, including Thursday as the highest-revenue day and Saturday as a day with no orders in the current report context. These observations should be interpreted within the dataset and report filters.
 
-* Total SKUs
-* Product Revenue
-* Product Quantity
-* Revenue by Product
-* Top Products by Revenue
-* Revenue by Product Type / Product Type Group
+### Page 2 — Customer & Product Deep-Dive
 
-⸻
+The second page explores customer and product performance.
 
-🧮 Example DAX Measures
+It includes:
 
-Some of the current Power BI measures include:
+- Top products by revenue and quantity
+- Top customers
+- A customer scatter plot comparing order count and revenue
+- Monthly analysis of new and repeat customers
 
-Active Customers
+The report is intended to support exploratory business analysis rather than to establish causal explanations for sales performance.
 
+## 8. DAX Measures and Calculated Columns
+
+The following list includes the DAX expressions supplied for this project. No additional measure, including `Operational Revenue`, is included.
+
+### Measures
+
+#### Total Revenue
+
+```dax
+Total Revenue =
+SUM(fact_sales[revenue])
+```
+
+#### Total Orders
+
+```dax
+Total Orders =
+DISTINCTCOUNT(fact_sales[invoiceno])
+```
+
+#### Total Quantity
+
+```dax
+Total Quantity =
+SUM(fact_sales[quantity])
+```
+
+#### Avg Order Value
+
+```dax
+Avg Order Value =
+DIVIDE(
+    [Total Revenue],
+    [Total Orders],
+    0
+)
+```
+
+#### Active Customers
+
+```dax
 Active Customers =
 CALCULATE(
     DISTINCTCOUNT(fact_sales[customerid]),
     fact_sales[customerid] <> "UNKNOWN"
 )
+```
 
-Average Order Value
+#### Repeat Customer %
 
-Avg Order Value =
-DIVIDE(
-    [Product Revenue],
-    DISTINCTCOUNT(fact_sales[invoiceno])
-)
-
-Repeat Customer %
-
+```dax
 Repeat Customer % =
-VAR _repeat =
-    CALCULATE(
-        DISTINCTCOUNT(fact_sales[customerid]),
-        FILTER(
-            VALUES(fact_sales[customerid]),
-            CALCULATE(
-                DISTINCTCOUNT(fact_sales[invoiceno])
-            ) > 1
-        ),
+VAR _known_customers =
+    FILTER(
+        VALUES(fact_sales[customerid]),
         fact_sales[customerid] <> "UNKNOWN"
+    )
+VAR _repeat_customers =
+    CALCULATE(
+        COUNTROWS(
+            FILTER(
+                _known_customers,
+                [Total Orders] > 1
+            )
+        )
     )
 RETURN
     DIVIDE(
-        _repeat,
-        [Active Customers]
+        _repeat_customers,
+        [Active Customers],
+        0
     )
+```
 
-Product Revenue
+This measure identifies customers with more than one distinct invoice in the current filter context. Its result can therefore change depending on the selected date range and other report filters.
 
-Product Revenue =
+#### Revenue PM
+
+```dax
+Revenue PM =
 CALCULATE(
-    SUM(fact_sales[revenue]),
-    dim_product[producttypegroup] = "Core"
+    [Total Revenue],
+    DATEADD(dim_date[date_key], -1, MONTH)
 )
+```
 
-Operational Revenue
+#### Revenue MoM Growth %
 
-Operational Revenue =
-CALCULATE(
-    SUM(fact_sales[revenue]),
-    dim_product[producttypegroup] = "Operational"
+```dax
+Revenue MoM Growth % =
+VAR _diff = [Total Revenue] - [Revenue PM]
+RETURN
+    DIVIDE(_diff, [Revenue PM], 0)
+```
+
+#### Orders per Customer
+
+```dax
+Orders per Customer =
+DIVIDE(
+    [Total Orders],
+    [Active Customers],
+    0
 )
+```
 
-⸻
+#### Average Selling Price
 
-🔎 Business Insights Explored
+```dax
+Average Selling Price =
+DIVIDE(
+    [Total Revenue],
+    [Total Quantity],
+    0
+)
+```
 
-The dashboard is intended not only to display numbers but also to support business observation.
+#### Revenue MoM Label
 
-Examples of observations explored during development include:
+```dax
+Revenue MoM Label =
+VAR _current = [Total Revenue]
+VAR _previous = [Revenue PM]
+VAR _growth_pct = [Revenue MoM Growth %]
+VAR _icon =
+    SWITCH(
+        TRUE(),
+        ISBLANK(_previous) || ISBLANK(_current), BLANK(),
+        _growth_pct > 0, UNICHAR(11165),
+        _growth_pct < 0, UNICHAR(11167),
+        "-"
+    )
+VAR _formatted_pct =
+    SWITCH(
+        TRUE(),
+        ISBLANK(_growth_pct), "N/A",
+        _growth_pct > 0, "+" & FORMAT(_growth_pct, "0.0%"),
+        FORMAT(_growth_pct, "0.0%")
+    )
+RETURN
+    IF(
+        ISBLANK(_previous),
+        "No prior period data",
+        _icon & " " & _formatted_pct & " vs PM"
+    )
+```
 
-* Revenue distribution across months
-* Revenue concentration among customers
-* New customer acquisition over time
-* Repeat customer behavior
-* Highest-revenue products
-* Revenue distribution by day of week
-* Thursday showing the highest observed revenue among weekdays
-* Saturday showing no observed sales activity in the analyzed data
-* Sunday having sales activity
+#### Revenue MoM Color
 
-These observations demonstrate how transaction data can be transformed into information that can be investigated from an operational/business perspective.
+```dax
+Revenue MoM Color =
+VAR _growth_pct = [Revenue MoM Growth %]
+RETURN
+    SWITCH(
+        TRUE(),
+        ISBLANK(_growth_pct), "#7F8C8D",
+        _growth_pct > 0, "#107C41",
+        _growth_pct < 0, "#C50F1F",
+        "#595959"
+    )
+```
 
-⸻
+### Calculated columns
 
-📁 Project Structure
+#### Market Segment
 
-Current project structure:
+```dax
+Market Segment =
+IF(fact_sales[is_domestic] = "1", "United Kingdom", "International")
+```
 
+#### Day Type
+
+```dax
+Day Type =
+IF(
+    dim_date[is_weekend] = "1",
+    "Weekend",
+    "Weekday"
+)
+```
+
+**Validation note:** The supplied PostgreSQL SQL creates `is_domestic` and `is_weekend` as Boolean columns. The two calculated columns above compare those fields to the text value `"1"`. Verify the data types and expressions in Power BI; if the columns are imported as Boolean, the comparisons should be adjusted to Boolean comparisons.
+
+## 9. Running the Project
+
+### Prerequisites
+
+Install or prepare:
+
+- Docker Desktop with Docker Compose
+- Power BI Desktop to open the dashboard
+- An ODBC driver compatible with PostgreSQL for the Power BI connection
+
+The Dockerfile downloads an ARM64 version of Eclipse Temurin JDK 17, so the current setup targets an ARM64 container environment.
+
+### Step 1 — Prepare environment variables
+
+Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+Review the variables and update credentials as needed.
+
+Do not commit `.env` or real credentials to the repository. For a public repository, use placeholder values in `.env.example` and document which values readers must configure.
+
+The Compose configuration supplies Docker service names for database connections inside the container network. The host-facing connection addresses used by desktop tools such as Power BI are different: use `localhost` with the published PostgreSQL port.
+
+### Step 2 — Download the dataset
+
+Download the original Online Retail Excel file from the UCI Machine Learning Repository and place it at:
+
+```text
+data/raw/online_retail.xlsx
+```
+
+The dataset is intentionally excluded from the repository.
+
+### Step 3 — Build and start the containers
+
+From the project root:
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+docker compose ps
+```
+
+Wait for the database and Airflow services to finish initializing before proceeding.
+
+### Step 4 — Load the Excel data into MySQL
+
+Run:
+
+```bash
+docker exec -it retail_airflow_webserver \
+  python /opt/airflow/src/01_excel_to_mysql.py
+```
+
+This loads the Excel records into the MySQL source table. Because the script truncates the target table before loading, run it only when you need to initialize or reload the source data.
+
+### Step 5 — Trigger the Airflow DAG
+
+Open Airflow in a browser:
+
+```text
+http://localhost:8080
+```
+
+Use the credentials configured in the local Compose setup. Change default credentials before using the project in any shared or exposed environment.
+
+In the Airflow UI:
+
+1. Find `retail_production_pipeline`.
+2. Trigger the DAG manually.
+3. Monitor the three tasks.
+4. Confirm that all tasks finish successfully.
+
+The successful execution documented for this project was a manual trigger.
+
+### Step 6 — Open the Power BI dashboard
+
+Open:
+
+```text
+bi/Retail_Sales_Performance.pbix
+```
+
+Configure the PostgreSQL ODBC connection to use the local database:
+
+| Setting | Value |
+|---|---|
+| Host | `localhost` |
+| Port | `5432` |
+| Database | `retail_dwh` |
+| Schema | `mart` |
+
+Use the credentials configured in your local environment. If the published host port or database credentials have been changed, update the connection settings accordingly.
+
+### Step 7 — Stop the environment
+
+To stop the running containers while retaining their data volumes:
+
+```bash
+docker compose stop
+```
+
+To remove the containers and network:
+
+```bash
+docker compose down
+```
+
+Named volumes are retained by default. Avoid `docker compose down -v` unless you intentionally want to delete the persistent database data and rebuild the environment from scratch.
+
+## 10. Project Structure
+
+```text
 .
-├── data pipeline/
-│   ├── dataset/
-│   │   ├── Online Retail.xlsx
-│   │   └── online+retail.zip
-│   │
-│   ├── load_csv_to_mysql.py
-│   ├── dm_load_csv_to_mysql.ipynb
-│   ├── spark_transform.py
-│   ├── 01_ddl_schema.sql
-│   ├── datacheck.ipynb
-│   ├── workflow.txt
-│   │
-│   ├── 1dm_spark_transform.ipynb
-│   ├── 2dm_spark_transform.ipynb
-│   └── dm_spark_transform.ipynb
-│
-├── power Bi/
-│   └── lab0/
-│       ├── sale perfomance dashboard.pbix
-│       └── ...
-│
-└── ...
+├── dags/
+│   └── retail_etl_dag.py
+├── src/
+│   ├── 01_excel_to_mysql.py
+│   └── 02_spark_mysql_to_postgres.py
+├── sql/
+│   ├── 00_init_mysql_source.sql
+│   ├── 00_init_airflow_db.sql
+│   ├── 01_init_postgres_dwh.sql
+│   └── 02_build_postgres_mart.sql
+├── data/
+│   └── raw/
+│       └── online_retail.xlsx   # Download locally; not committed
+├── bi/
+│   └── Retail_Sales_Performance.pbix
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .env.example
+├── .gitignore
+└── README.md
+```
 
-Some notebooks and SQL scripts are experimental/development versions from different stages of the project.
+## 11. Results
 
-The main intended pipeline is:
+The following row counts were observed in PostgreSQL after a successful DAG run:
 
-load raw data
-      ↓
-MySQL raw_sales
-      ↓
-PySpark transformation
-      ↓
-PostgreSQL warehouse
-      ↓
-PostgreSQL mart
-      ↓
-Power BI
+| Table | Observed rows |
+|---|---:|
+| `warehouse.online_retail_clean` | 541,909 |
+| `mart.dim_date` | 374 |
+| `mart.dim_customer` | 4,373 |
+| `mart.dim_product` | 4,070 |
+| `mart.fact_sales` | 397,884 |
+| `mart.agg_daily_sales` | 305 |
 
-⸻
+These are observed results from the tested dataset and run, not guaranteed counts for every future execution.
 
-🚀 Current Status
+The project successfully demonstrated the end-to-end flow from Excel ingestion through MySQL, PySpark transformation, PostgreSQL warehouse and data mart creation, Airflow orchestration, and Power BI reporting.
 
-V1 — Current Scope
+## 12. Current Scope and Limitations
 
-The primary goal of V1 is to demonstrate an end-to-end data engineering workflow.
+- The project runs in a local development environment.
+- Excel-to-MySQL ingestion is executed separately from the Airflow DAG.
+- The DAG's manual execution was verified; automatic scheduled execution has not been verified.
+- The warehouse and mart are rebuilt by the DAG rather than incrementally updated.
+- Table row counts were checked after a successful run, but a comprehensive automated data-quality test suite has not been implemented.
+- Returns are retained in the product fact table when they pass the other mart filters, so negative quantities can contribute negative revenue.
+- The DAX calculated columns `Market Segment` and `Day Type` should be checked against the Boolean data types created by the PostgreSQL SQL.
+- This project is a personal learning and portfolio project, not a production deployment.
 
-Completed / demonstrated:
+## 13. Potential Future Improvements
 
-* Raw dataset ingestion
-* MySQL raw data storage
-* PySpark JDBC extraction
-* Data cleaning and transformation
-* Transaction classification
-* Product classification
-* Revenue calculation
-* PostgreSQL warehouse design
-* Data mart design
-* Dimension and fact modeling
-* Power BI connection to PostgreSQL
-* DAX measures
-* Business-oriented dashboard analysis
+Possible future enhancements include:
 
-The Power BI dashboard is currently functional but still at an early stage and is not considered production-quality.
+- Add automated data-quality checks and validation queries.
+- Add pipeline-level logging and more detailed failure diagnostics.
+- Implement incremental loading instead of dropping and rebuilding downstream tables.
+- Verify and test scheduled DAG execution and timezone behavior.
+- Add documented test cases for cancellations, returns, missing customer IDs, and invalid prices.
+- Review and validate Power BI calculated columns and filter-context behavior.
 
-⸻
+---
 
-🔮 Future Improvements
-
-1. Orchestration with Apache Airflow
-
-The current pipeline is manually executed.
-
-A future version will introduce Apache Airflow to orchestrate the workflow.
-
-Target flow:
-
-Airflow DAG
-    │
-    ├── Load raw data
-    │
-    ├── Run PySpark ETL
-    │
-    ├── Build / refresh warehouse
-    │
-    ├── Build / refresh mart
-    │
-    └── Refresh downstream analytics
-
-The DAG can eventually be scheduled to run automatically instead of requiring manual execution.
-
-⸻
-
-2. Machine Learning
-
-A future branch of the project may use the warehouse data to create a training dataset for a simple machine learning model.
-
-Potential use cases include:
-
-* Sales forecasting
-* Customer behavior prediction
-* Customer segmentation
-* Product demand prediction
-
-The ML component is intentionally outside the scope of the current V1.
-
-The priority is first to complete and stabilize the end-to-end data pipeline.
-
-⸻
-
-3. Pipeline Improvements
-
-Potential future improvements include:
-
-* Automated orchestration
-* Incremental loading
-* Better data quality checks
-* More robust error handling
-* Production-style configuration management
-* Improved dashboard design
-* Automated testing
-* Better warehouse and mart refresh strategy
-* ML training pipeline
-
-⸻
-
-🎯 Project Objective
-
-The main objective of this project is not to reproduce a production retail data platform.
-
-Instead, it is a hands-on implementation of a simplified data engineering workflow:
-
-Raw Data
-   ↓
-Ingestion
-   ↓
-ETL
-   ↓
-Data Warehouse
-   ↓
-Data Mart
-   ↓
-BI Dashboard
-   ↓
-Business Analysis
-
-The project demonstrates practical experience with:
-
-* Python
-* SQL
-* PySpark
-* ETL concepts
-* Data warehouse concepts
-* Dimensional modeling
-* PostgreSQL
-* MySQL
-* Power BI
-* DAX
-* JDBC-based data movement
-* Business-oriented data analysis
+**Project focus:** Data ingestion, ETL orchestration, PySpark transformation, PostgreSQL dimensional modeling, and Power BI analytics.

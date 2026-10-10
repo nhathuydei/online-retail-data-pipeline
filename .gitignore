@@ -1,19 +1,71 @@
-# macOS
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSSharedFileList
+
+# Python / Virtual Environment
+__pycache__/
+.ipynb_checkpoints/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# Data files (Chỉ lưu code, không lưu raw data nặng lên Git)
+data/raw/*
+!data/raw/.gitkeep
+
+# Environment variables
+.env
+
+# Power BI auto-recovery
+*.pbix.auto
+
+Environment variables and secrets
+
+.env
+.env.*
+!.env.example
+
+Python virtual environments
+
+.venv/
+venv/
+env/
+
+Python cache and compiled files
+
+pycache/
+*.py[cod]
+*$py.class
+
+macOS
+
 .DS_Store
 
-# Python
-__pycache__/
-*.pyc
+IDE and editor
 
-# Jupyter Notebook
-.ipynb_checkpoints/
+.vscode/
+.idea/
 
-# Local datasets
-*.xlsx
-*.zip
+Logs
 
-# Power BI
-*.pbix
+*.log
 
-# Environment / secrets
-.env
+Temporary files
+
+*.tmp
+*.bak
+
+Local data files
+
+data/raw/*
+!data/raw/.gitkeep
+
+Local database files
+
+*.sqlite
+*.sqlite3
+*.db
