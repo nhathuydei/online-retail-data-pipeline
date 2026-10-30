@@ -4,9 +4,6 @@ CREATE DATABASE IF NOT EXISTS retail_source
 
 USE retail_source;
 
--- 2. Khởi tạo bảng raw_sales với kiểu dữ liệu chuẩn cho tầng Raw Staging
-DROP TABLE IF EXISTS raw_sales;
-
 CREATE TABLE raw_sales (
     InvoiceNo VARCHAR(50),
     StockCode VARCHAR(50),
@@ -18,3 +15,5 @@ CREATE TABLE raw_sales (
     Country VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- Cột audit ghi nhận thời gian nạp data
 );
+
+

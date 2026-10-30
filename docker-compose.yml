@@ -4,17 +4,14 @@ x-airflow-common: &airflow-common
   # image: apache/airflow:2.8.1-python3.11
   build: .
   environment: &airflow-common-env
-    # AIRFLOW__CORE__FERNET_KEY: ""
 
-    AIRFLOW__CORE__FERNET_KEY: '46G2d3z9x0A='  # Hoặc chuỗi Fernet Key cố định của bạn
-    AIRFLOW__WEBSERVER__SECRET_KEY: 'retail_data_pipeline_secret_key_2026' # <--- THÊM DÒNG NÀY
-
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY}
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_dwh:5432/airflow_db
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres_dwh:5432/airflow_db
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-    AIRFLOW__CORE__LOGGING_LEVEL: INFO
-    AIRFLOW__CORE__TEST_CONNECTION: "Enabled" # <--- BẬT CHO PHÉP TEST CONNECTION
-
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    AIRFLOW__CORE__TEST_CONNECTION: "Enabled"
     # Biến môi trường kết nối DB
     MYSQL_HOST: mysql_source
     MYSQL_PORT: 3306
@@ -52,7 +49,7 @@ services:
     ports:
       - "${MYSQL_PORT}:3306"
     volumes:
-      - ./sql/00_init_mysql_source.sql:/docker-entrypoint-initdb.d/00_init_mysql_source.sql
+      - ./sql/setup/mysql_source_init.sql:/docker-entrypoint-initdb.d/mysql_source_init.sql
       - mysql_source_data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
@@ -75,8 +72,7 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres_dwh_data:/var/lib/postgresql/data
-      # Tự động tạo DB cho Airflow Metadata
-      - ./sql/00_init_airflow_db.sql:/docker-entrypoint-initdb.d/00_init_airflow_db.sql
+      - ./sql/setup/airflow_metadata_setup.sql:/docker-entrypoint-initdb.d/airflow_metadata_setup.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -93,11 +89,10 @@ services:
     command:
       - -c
       - |
-        pip install --no-cache-dir -r /opt/airflow/requirements.txt
         airflow db init
         airflow users create \
           --username admin \
-          --password admin \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
           --firstname Nhat \
           --lastname Huy \
           --role Admin \

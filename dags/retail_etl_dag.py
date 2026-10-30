@@ -20,32 +20,26 @@ with DAG(
     dag_id='retail_production_pipeline',
     default_args=default_args,
     description='Production ETL Pipeline: MySQL OLTP -> PySpark Transform -> Postgres DWH & Mart',
-    schedule_interval='0 2 * * *',
+    schedule=None,
+    # schedule_interval=None, # Chạy định kỳ mỗi ngày lúc 2h sáng
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    template_searchpath=['/opt/airflow/sql'], # Khai báo thêm searchpath cho Jinja2
+    template_searchpath=['/opt/airflow/sql'],
     tags=['retail', 'production', 'pyspark', 'postgres'],
 ) as dag:
 
-    # Task 1: Khởi tạo Schema DWH trên Postgres
-    task_init_postgres_dwh = PostgresOperator(
-        task_id='init_postgres_dwh_schema',
-        postgres_conn_id='postgres_dwh_default',
-        sql=load_sql_file('/opt/airflow/sql/01_init_postgres_dwh.sql'),
-    )
-
-    # Task 2: PySpark Transform
+    # Task 1: PySpark Ingestion (Bốc dữ liệu incremental từ MySQL sang PostgreSQL Warehouse)
     task_spark_transform = BashOperator(
         task_id='spark_mysql_to_postgres',
         bash_command='python /opt/airflow/src/02_spark_mysql_to_postgres.py',
     )
 
-    # Task 3: Dựng tầng Data Mart
-    task_build_data_mart = PostgresOperator(
-        task_id='build_postgres_data_mart',
+    # Task 2: Refresh Data Mart (Dùng file DML chạy định kỳ từ thư mục transform)
+    task_refresh_data_mart = PostgresOperator(
+        task_id='refresh_postgres_data_mart',
         postgres_conn_id='postgres_dwh_default',
-        sql=load_sql_file('/opt/airflow/sql/02_build_postgres_mart.sql'),
+        sql=load_sql_file('/opt/airflow/sql/transform/refresh_postgres_mart.sql'),
     )
 
-    # Dependency Flow
-    task_init_postgres_dwh >> task_spark_transform >> task_build_data_mart
+    # Dependency Flow chuẩn: Rót dữ liệu vào Warehouse trước, sau đó transform sang Mart
+    task_spark_transform >> task_refresh_data_mart
